@@ -1,0 +1,217 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN""http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<META HTTP-EQUIV="pragma" CONTENT="no-cache">
+<META HTTP-EQUIV="Cache-Control" CONTENT="no-cache, must-revalidate">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>GM630</title>
+<LINK REL="stylesheet" HREF="css/login.css" TYPE="text/css" />
+<LINK REL="stylesheet" HREF="css/stylech.css" TYPE="text/css" />
+<link rel="stylesheet" href="css/ulogin.css" />
+<script>
+if(self == top) {
+document.documentElement.style.display = 'block';
+} else {
+top.location = self.location;
+}
+
+function getObj(id)
+{
+return(document.getElementById(id));
+}
+var SetTFlag = 0;
+var maxtime;
+var interval;
+function setTime()
+{
+if(window.name>=60 || window.name<0 || window.name=="")
+{
+maxtime = Math.min(60, 5240 + 60 - 5347);
+}
+else
+{
+maxtime = window.name;
+}
+if(maxtime>=0)
+{
+seconds = maxtime;
+getObj("time").innerHTML=seconds+" secs";
+if (maxtime == 0)
+{
+setDisable();
+SetTFlag =0;
+window.name="";
+if(interval)
+{
+clearInterval(interval);
+interval = 0;
+}
+}
+else
+{
+--maxtime;
+SetTFlag = 1;
+window.name = maxtime;
+}
+}
+}
+function setinner(type)
+{
+if (SetTFlag ==0)
+{
+getObj("myLayer").style.visibility = type ;
+}
+}
+function Transfer_meaning(id,value)
+{
+getObj(id).value=value;
+}
+</script>
+</head>
+<body onload="onFocus();">
+<div id="container">
+<div id="myLayer" onmousedown="setinner('hidden')" style="position:absolute; width:185px; height:91px; z-index:9; left: 50%; margin-left: 155px; top: 35%; background: url(img/pop_up.gif) no-repeat; border: 1px none #000000; visibility: hidden;">
+<div id="Layer1" style="position:absolute; width:180px; height:45px; z-index:10; left: 2px; top: 28px;">
+<table width="183" border="0">
+<tr>
+<td width="183">&nbsp;&nbsp;<font id="errmsg" class="notecontent" ></font><span id="time" style="color:red;display:none;"></span></td>
+</tr>
+</table>
+</div>
+<div id="Layer3" style="position:absolute; width:140px; height:10px; z-index:11; left: 34px; top: 9px; font-size: 8pt;">
+<font  class="note" id="errnote">&nbsp;Error</font>
+</div>
+</div>
+<div id="head" style="display:none">
+<div class="type"><font id="">GM630</font></div>
+<div id="banner"></div>
+</div>
+
+
+<img src="img/bg.png" class="LOGIN_IMG_contentBg"/>
+<div>
+<form name="fLogin" id="fLogin" method="post"  onsubmit="return false;" class="CLS_formTable" action="" style="position: absolute;left: 50%;-webkit-transform: translateX(-50%);transform: translateX(-50%);">
+<input type="hidden" name="_lang" id="_lang" value="" disabled>
+<input type="hidden" name="frashnum" id="frashnum" value="">
+<input type="hidden" name="action" id="action" value="login">
+<input type="hidden" name="Frm_Logintoken" id="Frm_Logintoken" value="">
+<table class="CLS_TB_operable">
+<tr>
+<td>
+<label for="user_name">Username：</label>
+</td>
+<td>
+<input type="text" name="username" id="username" class="font_chara" />
+</td>
+</tr>
+<tr>
+<td>
+<label for="Password">Password：</label>
+</td>
+<td>
+<input name="Password" type="password" id="password" class="font_chara" autocomplete="off"/>
+</td>
+</tr>
+<tr id="tr_pwdcheck" style="display:none;">
+<td></td>
+<td><font color="red" id="errtip"></font></td>
+</tr>
+<tr>
+<td></td>
+<td colspan="2">
+<table>
+<tr>
+<td style="text-align:left;" width = "250" >Original password is on the back</td>
+<td id="capslock" style="display:none;" ><font color="red">Caps Lock !</font></td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td></td>
+<td>
+<table width="100%">
+<tr>
+<td width="55%">
+<input type="button" class="blueBtn submitBtn" id="LoginId" onclick="dosubmit()" value="Confirm"/>
+</td>
+<td>
+<input class="blueBtn submitBtn" type="reset"  id="LoginReset"  value="Reset" >
+</td>
+<!--<td><input type="button" class="blueBtn submitBtn" style="margin-left:10px;" onclick="gotoRegister()" id="BTN_Register" value="Device Register"/></td>	-->
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</form>
+</div>
+<!--
+<img src="img/bg.png" class="LOGIN_IMG_contentBg"/>
+<div id="MAIN_DIV_footer" class="center">
+<div class="center middle" id="MAIN_DIV_copyRightInfo">
+<span class="font_chara left">Copyright&copy;zxic - All rights reserved</span>
+<a href="http://www.yueme.tv/"><img src="/img/ct_logo.png" class="left" /></a>
+<div class="clear"></div>
+</div>
+</div>
+-->
+</body>
+</html>
+<script>
+
+getObj("username").value = "user";
+var UserStr = "user";
+
+window.name="";
+
+function gotoRegister()
+{
+document.location.href="register.gch";
+}
+function SetDisabled()
+{
+getObj("errmsg").innerHTML = "You have input the wrong username or password for three times. Please try again a minute later.";
+getObj("username").disabled = true;
+getObj("password").disabled = true;
+getObj("LoginId").disabled = true;
+
+getObj("myLayer").style.visibility = "visible" ;
+getObj("time").style.display = "" ;
+interval = setInterval("setTime()",1000);
+}
+function setDisable()
+{
+if (SetTFlag == 1)
+{
+getObj("username").disabled = false;
+getObj("password").disabled = false;
+getObj("LoginId").disabled = false;
+
+getObj("time").style.display = "none";
+getObj("myLayer").style.visibility = "hidden";
+
+}
+}
+function dosubmit()
+{
+{
+getObj("LoginId").disabled = true;
+
+getObj("Frm_Logintoken").value = "5";
+document.fLogin.submit();
+}
+}
+function doreset()
+{
+var HostIPAddr = "192.168.1.1";
+HostIPAddr = "http:\/\/"+HostIPAddr+"\/";
+document.location.href=HostIPAddr;
+}
+function onFocus()
+{
+if( document.getElementById("password").disabled == false )
+{
+document.getElementById("password").focus();
+}
+}
+</script>
