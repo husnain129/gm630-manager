@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,12 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useConnectedDevices } from '@/hooks/useConnectedDevices';
 import { useMacFilter, useAddMacFilter, useRemoveMacFilter } from '@/hooks/useMacFilter';
+import { useMacLabels } from '@/store/macLabels';
 import { lookupVendor } from '@/lib/oui';
 import type { ConnectedDevice } from '@/router/gm630/types';
 
@@ -43,6 +45,15 @@ export default function DeviceDetailScreen() {
   const { data: filterData } = useMacFilter();
   const addMutation = useAddMacFilter();
   const removeMutation = useRemoveMacFilter();
+  const { labels, setLabel } = useMacLabels();
+
+  const savedLabel = labels[mac] ?? '';
+  const [labelValue, setLabelValue] = useState(savedLabel);
+  const labelChanged = labelValue.trim() !== savedLabel;
+
+  const handleSaveLabel = useCallback(() => {
+    setLabel(mac, labelValue);
+  }, [mac, labelValue, setLabel]);
 
   const device = useMemo(
     () => devicesData?.devices.find((d) => d.mac.toLowerCase() === mac),
@@ -57,7 +68,6 @@ export default function DeviceDetailScreen() {
   const filterMode = filterData?.mode ?? 'disabled';
   const isInList = !!filterEntry;
 
-  // Whether this device is currently blocked
   const isBlocked = useMemo(() => {
     if (filterMode === 'blacklist') return isInList;
     if (filterMode === 'whitelist') return !isInList;
@@ -69,27 +79,19 @@ export default function DeviceDetailScreen() {
 
   const handleToggleBlock = () => {
     if (!isInList) {
-      // Adding to list
       if (filterMode === 'whitelist') {
-        // Adding to whitelist = allowing, safe
         addMutation.mutate(mac, { onSuccess: () => {} });
       } else {
-        // Adding to blacklist = blocking — confirm
         Alert.alert(
           'Block Device',
           `Add ${mac.toUpperCase()} to the blacklist?\n\nThis device will be blocked from connecting.`,
           [
             { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Block',
-              style: 'destructive',
-              onPress: () => addMutation.mutate(mac),
-            },
+            { text: 'Block', style: 'destructive', onPress: () => addMutation.mutate(mac) },
           ],
         );
       }
     } else {
-      // Removing from list
       Alert.alert(
         'Remove from Filter List',
         `Remove ${mac.toUpperCase()} from the filter list?`,
@@ -98,11 +100,7 @@ export default function DeviceDetailScreen() {
           {
             text: 'Remove',
             style: 'destructive',
-            onPress: () => {
-              removeMutation.mutate(filterEntry!.index, {
-                onSuccess: () => {},
-              });
-            },
+            onPress: () => removeMutation.mutate(filterEntry!.index, { onSuccess: () => {} }),
           },
         ],
       );
@@ -113,14 +111,37 @@ export default function DeviceDetailScreen() {
   const mutationError = addMutation.error ?? removeMutation.error;
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      {/* close handle for modal */}
+    <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.handle} />
 
       {/* MAC header */}
       <View style={styles.macHeader}>
+        {savedLabel ? <Text style={styles.labelHeading}>{savedLabel}</Text> : null}
         <Text style={styles.macText}>{mac.toUpperCase()}</Text>
         {vendor ? <Text style={styles.vendor}>{vendor}</Text> : null}
+      </View>
+
+      {/* Label section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Label</Text>
+        <View style={styles.labelRow}>
+          <TextInput
+            style={styles.labelInput}
+            value={labelValue}
+            onChangeText={setLabelValue}
+            placeholder="Add a label (e.g. Living Room TV)"
+            placeholderTextColor="#94a3b8"
+            autoCapitalize="words"
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={handleSaveLabel}
+          />
+          {labelChanged && (
+            <TouchableOpacity style={styles.labelSaveBtn} onPress={handleSaveLabel}>
+              <Text style={styles.labelSaveBtnText}>Save</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Details card */}
@@ -155,7 +176,6 @@ export default function DeviceDetailScreen() {
           </View>
         ) : null}
 
-        {/* Filter status */}
         <View style={[styles.row, styles.rowBorder]}>
           <Text style={styles.rowLabel}>Filter Status</Text>
           {filterMode === 'disabled' ? (
@@ -175,7 +195,6 @@ export default function DeviceDetailScreen() {
         ) : null}
       </View>
 
-      {/* mutation error */}
       {mutationError ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>{mutationError.message}</Text>
@@ -231,47 +250,57 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 48 },
 
   handle: {
-    width: 36,
-    height: 4,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 24,
+    width: 36, height: 4, backgroundColor: '#e2e8f0',
+    borderRadius: 2, alignSelf: 'center', marginBottom: 24,
   },
 
-  macHeader: { alignItems: 'center', marginBottom: 28 },
+  macHeader: { alignItems: 'center', marginBottom: 20 },
+  labelHeading: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 4, textAlign: 'center' },
   macText: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#64748b',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     letterSpacing: 1,
     textAlign: 'center',
   },
-  vendor: { fontSize: 14, color: '#64748b', marginTop: 6 },
+  vendor: { fontSize: 13, color: '#94a3b8', marginTop: 4 },
+
+  section: { marginBottom: 16 },
+  sectionTitle: {
+    fontSize: 11, fontWeight: '600', color: '#94a3b8',
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8,
+  },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  labelInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: '#0f172a',
+  },
+  labelSaveBtn: {
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  labelSaveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', marginBottom: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 13,
   },
-  rowBorder: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#f1f5f9',
-  },
+  rowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f1f5f9' },
   rowLabel: { fontSize: 14, color: '#475569' },
   rowValue: { fontSize: 14, fontWeight: '500', color: '#0f172a' },
   rowValueMuted: { fontSize: 14, color: '#94a3b8' },
@@ -279,49 +308,27 @@ const styles = StyleSheet.create({
   blockedText: { color: '#dc2626', fontWeight: '600' },
   allowedText: { color: '#16a34a', fontWeight: '600' },
 
-  bandPill: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
+  bandPill: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   bandPillText: { fontSize: 13, fontWeight: '600' },
 
-  errorBanner: {
-    backgroundColor: '#fef2f2',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 16,
-  },
+  errorBanner: { backgroundColor: '#fef2f2', borderRadius: 10, padding: 14, marginBottom: 16 },
   errorBannerText: { color: '#dc2626', fontSize: 13, lineHeight: 18 },
 
   actionBtn: {
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-    minHeight: 52,
-    justifyContent: 'center',
+    borderRadius: 12, paddingVertical: 16, alignItems: 'center',
+    marginBottom: 12, minHeight: 52, justifyContent: 'center',
   },
   actionBtnPrimary: { backgroundColor: '#dc2626' },
   actionBtnDestructive: { backgroundColor: '#64748b' },
   actionBtnDisabled: { opacity: 0.6 },
   actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
-  disabledNote: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
-  },
+  disabledNote: { backgroundColor: '#f1f5f9', borderRadius: 10, padding: 14, marginBottom: 12 },
   disabledNoteText: { color: '#64748b', fontSize: 13, lineHeight: 20, textAlign: 'center' },
 
   closeBtn: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 4,
+    backgroundColor: '#f1f5f9', borderRadius: 12, paddingVertical: 14,
+    alignItems: 'center', marginTop: 4,
   },
   closeBtnText: { color: '#334155', fontWeight: '600', fontSize: 15 },
 });

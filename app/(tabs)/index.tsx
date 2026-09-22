@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { useConnectedDevices } from '@/hooks/useConnectedDevices';
 import { useRouterStore } from '@/store/router';
 import { lookupVendor } from '@/lib/oui';
+import { useMacLabels } from '@/store/macLabels';
 import type { ConnectedDevice, MacFilterState } from '@/router/gm630/types';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -37,10 +38,6 @@ function isBlocked(mac: string, filter: MacFilterState): boolean {
   return false;
 }
 
-function formatMac(mac: string): string {
-  return mac.toUpperCase();
-}
-
 function timeAgo(ts: number): string {
   const diff = Math.round((Date.now() - ts) / 1000);
   if (diff < 5) return 'just now';
@@ -50,7 +47,15 @@ function timeAgo(ts: number): string {
 
 // ── device row ────────────────────────────────────────────────────────────────
 
-function DeviceRow({ device, filter }: { device: ConnectedDevice; filter: MacFilterState }) {
+function DeviceRow({
+  device,
+  filter,
+  label,
+}: {
+  device: ConnectedDevice;
+  filter: MacFilterState;
+  label?: string;
+}) {
   const blocked = isBlocked(device.mac, filter);
   const color = bandColor(device.band);
   const vendor = lookupVendor(device.mac.toLowerCase());
@@ -64,17 +69,15 @@ function DeviceRow({ device, filter }: { device: ConnectedDevice; filter: MacFil
     >
       <View style={[styles.bandDot, { backgroundColor: color }]} />
       <View style={styles.rowMain}>
-        <Text style={styles.hostname} numberOfLines={1}>
-          {device.hostname ?? formatMac(device.mac)}
+        {label ? <Text style={styles.labelText} numberOfLines={1}>{label}</Text> : null}
+        <Text style={[styles.hostname, label ? styles.hostnameSecondary : null]} numberOfLines={1}>
+          {device.hostname ?? device.mac.toUpperCase()}
         </Text>
         <Text style={styles.rowSub}>
-          {device.ip ?? '—'}
-          {'  ·  '}
-          <Text style={styles.mac}>{formatMac(device.mac)}</Text>
+          {device.ip ?? '—'}{'  ·  '}
+          <Text style={styles.mac}>{device.mac.toUpperCase()}</Text>
         </Text>
-        {vendor ? (
-          <Text style={styles.vendor}>{vendor}</Text>
-        ) : null}
+        {vendor ? <Text style={styles.vendor}>{vendor}</Text> : null}
       </View>
       <View style={styles.rowRight}>
         <View style={[styles.bandPill, { backgroundColor: color + '22', borderColor: color }]}>
@@ -123,6 +126,7 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 export default function DevicesScreen() {
   const { data, isLoading, isFetching, error, refetch } = useConnectedDevices();
   const lastUpdated = useRouterStore((s) => s.lastUpdated);
+  const { labels } = useMacLabels();
 
   if (isLoading) {
     return (
@@ -142,7 +146,6 @@ export default function DevicesScreen() {
 
   return (
     <View style={styles.root}>
-      {/* header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.countNumber}>{devices.length}</Text>
@@ -165,7 +168,13 @@ export default function DevicesScreen() {
       <FlatList
         data={devices}
         keyExtractor={(d) => d.mac}
-        renderItem={({ item }) => <DeviceRow device={item} filter={filter} />}
+        renderItem={({ item }) => (
+          <DeviceRow
+            device={item}
+            filter={filter}
+            label={labels[item.mac.toLowerCase()]}
+          />
+        )}
         refreshControl={
           <RefreshControl refreshing={isFetching && !isLoading} onRefresh={refetch} />
         }
@@ -209,20 +218,19 @@ const styles = StyleSheet.create({
 
   row: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 14,
+    backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 12,
   },
-  bandDot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
-  rowMain: { flex: 1, gap: 3 },
-  hostname: { fontSize: 15, fontWeight: '600', color: '#0f172a' },
-  rowSub: { fontSize: 12, color: '#64748b' },
+  bandDot: { width: 10, height: 10, borderRadius: 5, marginRight: 12, alignSelf: 'flex-start', marginTop: 5 },
+  rowMain: { flex: 1, gap: 2 },
+  labelText: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  hostname: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
+  hostnameSecondary: { fontSize: 12, fontWeight: '500', color: '#475569' },
+  rowSub: { fontSize: 11, color: '#64748b' },
   mac: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11 },
   vendor: { fontSize: 11, color: '#94a3b8' },
   rowRight: { alignItems: 'flex-end', gap: 4 },
 
-  bandPill: {
-    borderWidth: 1, borderRadius: 6,
-    paddingHorizontal: 6, paddingVertical: 2,
-  },
+  bandPill: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   bandText: { fontSize: 11, fontWeight: '700' },
 
   statusPill: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },

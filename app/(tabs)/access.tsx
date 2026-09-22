@@ -5,6 +5,7 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Alert,
   Modal,
   TextInput,
@@ -16,6 +17,7 @@ import {
 import { useMacFilter, useAddMacFilter, useRemoveMacFilter, useSetFilterMode } from '@/hooks/useMacFilter';
 import { useConnectedDevices } from '@/hooks/useConnectedDevices';
 import { lookupVendor } from '@/lib/oui';
+import { useMacLabels } from '@/store/macLabels';
 import type { MacFilterEntry } from '@/router/gm630/types';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -23,7 +25,6 @@ import type { MacFilterEntry } from '@/router/gm630/types';
 const MAC_REGEX = /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/;
 
 function normaliseMac(input: string): string {
-  // Accept with colons, dashes, or no separator; normalise to lowercase colon-separated
   const clean = input.replace(/[^0-9a-fA-F]/g, '');
   if (clean.length !== 12) return input.trim();
   return (
@@ -37,9 +38,15 @@ function normaliseMac(input: string): string {
 }
 
 function modeLabel(mode: 'disabled' | 'blacklist' | 'whitelist'): string {
-  if (mode === 'blacklist') return 'Blacklist — block listed';
-  if (mode === 'whitelist') return 'Whitelist — allow only listed';
+  if (mode === 'blacklist') return 'Blacklist';
+  if (mode === 'whitelist') return 'Whitelist';
   return 'Disabled';
+}
+
+function modeDescription(mode: 'disabled' | 'blacklist' | 'whitelist'): string {
+  if (mode === 'blacklist') return 'Listed devices are blocked';
+  if (mode === 'whitelist') return 'Only listed devices allowed';
+  return 'No filtering active';
 }
 
 function modeBadgeColor(mode: 'disabled' | 'blacklist' | 'whitelist'): string {
@@ -52,10 +59,12 @@ function modeBadgeColor(mode: 'disabled' | 'blacklist' | 'whitelist'): string {
 
 function EntryRow({
   entry,
+  label,
   onDelete,
   isDeleting,
 }: {
   entry: MacFilterEntry;
+  label?: string;
   onDelete: () => void;
   isDeleting: boolean;
 }) {
@@ -64,6 +73,7 @@ function EntryRow({
   return (
     <View style={styles.entryRow}>
       <View style={styles.entryMain}>
+        {label ? <Text style={styles.entryLabel}>{label}</Text> : null}
         <Text style={styles.entryMac}>{entry.mac.toUpperCase()}</Text>
         {vendor ? <Text style={styles.entryVendor}>{vendor}</Text> : null}
       </View>
@@ -90,6 +100,85 @@ function EntryRow({
   );
 }
 
+// ── change mode modal ─────────────────────────────────────────────────────────
+
+const MODES: Array<{ key: 'disabled' | 'blacklist' | 'whitelist'; label: string; desc: string; color: string }> = [
+  { key: 'disabled', label: 'Disabled', desc: 'No filtering active', color: '#64748b' },
+  { key: 'blacklist', label: 'Blacklist', desc: 'Block listed devices', color: '#dc2626' },
+  { key: 'whitelist', label: 'Whitelist', desc: 'Allow only listed devices', color: '#16a34a' },
+];
+
+function ChangeModeModal({
+  visible,
+  currentMode,
+  isPending,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  currentMode: 'disabled' | 'blacklist' | 'whitelist';
+  isPending: boolean;
+  onSelect: (mode: 'disabled' | 'blacklist' | 'whitelist') => void;
+  onClose: () => void;
+}) {
+  const handleSelect = useCallback(
+    (mode: 'disabled' | 'blacklist' | 'whitelist') => {
+      if (mode === 'whitelist' && mode !== currentMode) {
+        Alert.alert(
+          'Enable Whitelist Mode',
+          "Make sure your device's MAC is in the list before enabling, or you will be locked out.",
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Enable Whitelist', style: 'destructive', onPress: () => onSelect(mode) },
+          ],
+        );
+      } else {
+        onSelect(mode);
+      }
+    },
+    [currentMode, onSelect],
+  );
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.modeOverlay}>
+          <TouchableWithoutFeedback>
+            <View style={styles.modeSheet}>
+              <View style={styles.modeSheetHeader}>
+                <Text style={styles.modeSheetTitle}>Filter Mode</Text>
+                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.modeSheetClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              {MODES.map((m) => (
+                <TouchableOpacity
+                  key={m.key}
+                  style={[styles.modeOption, currentMode === m.key && styles.modeOptionActive]}
+                  onPress={() => handleSelect(m.key)}
+                  disabled={isPending}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.modeOptionLeft}>
+                    <View style={[styles.modeOptionDot, { backgroundColor: m.color }]} />
+                    <View>
+                      <Text style={[styles.modeOptionLabel, { color: m.color }]}>{m.label}</Text>
+                      <Text style={styles.modeOptionDesc}>{m.desc}</Text>
+                    </View>
+                  </View>
+                  {currentMode === m.key ? (
+                    <Text style={[styles.modeOptionCheck, { color: m.color }]}>✓</Text>
+                  ) : null}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+}
+
 // ── pick-from-devices modal ───────────────────────────────────────────────────
 
 function PickDeviceModal({
@@ -100,7 +189,7 @@ function PickDeviceModal({
 }: {
   visible: boolean;
   existingMacs: string[];
-  onPick: (mac: string) => void;
+  onPick: (mac: string, label: string) => void;
   onClose: () => void;
 }) {
   const { data } = useConnectedDevices();
@@ -132,10 +221,11 @@ function PickDeviceModal({
             ItemSeparatorComponent={() => <View style={styles.separator} />}
             renderItem={({ item }) => {
               const vendor = lookupVendor(item.mac.toLowerCase());
+              const label = item.hostname ?? '';
               return (
                 <TouchableOpacity
                   style={styles.pickRow}
-                  onPress={() => onPick(item.mac.toLowerCase())}
+                  onPress={() => onPick(item.mac.toLowerCase(), label)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.pickRowMain}>
@@ -166,25 +256,28 @@ function ManualMacModal({
   onClose,
 }: {
   visible: boolean;
-  onAdd: (mac: string) => void;
+  onAdd: (mac: string, label: string) => void;
   onClose: () => void;
 }) {
-  const [value, setValue] = useState('');
+  const [mac, setMac] = useState('');
+  const [label, setLabel] = useState('');
   const [error, setError] = useState('');
 
   const handleAdd = useCallback(() => {
-    const normalised = normaliseMac(value);
+    const normalised = normaliseMac(mac);
     if (!MAC_REGEX.test(normalised)) {
       setError('Invalid MAC address. Format: aa:bb:cc:dd:ee:ff');
       return;
     }
-    onAdd(normalised);
-    setValue('');
+    onAdd(normalised, label);
+    setMac('');
+    setLabel('');
     setError('');
-  }, [value, onAdd]);
+  }, [mac, label, onAdd]);
 
   const handleClose = useCallback(() => {
-    setValue('');
+    setMac('');
+    setLabel('');
     setError('');
     onClose();
   }, [onClose]);
@@ -201,25 +294,36 @@ function ManualMacModal({
             <Text style={styles.modalClose}>Cancel</Text>
           </TouchableOpacity>
         </View>
-        <View style={styles.manualBody}>
+        <ScrollView style={styles.manualScroll} contentContainerStyle={styles.manualBody} keyboardShouldPersistTaps="handled">
           <Text style={styles.manualLabel}>MAC Address</Text>
           <TextInput
             style={styles.manualInput}
-            value={value}
-            onChangeText={(t) => { setValue(t); setError(''); }}
+            value={mac}
+            onChangeText={(t) => { setMac(t); setError(''); }}
             placeholder="aa:bb:cc:dd:ee:ff"
             placeholderTextColor="#94a3b8"
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="default"
+            returnKeyType="next"
+          />
+          {error ? <Text style={styles.manualError}>{error}</Text> : null}
+          <Text style={[styles.manualLabel, { marginTop: 16 }]}>Label <Text style={styles.manualOptional}>(optional)</Text></Text>
+          <TextInput
+            style={styles.manualInput}
+            value={label}
+            onChangeText={setLabel}
+            placeholder="e.g. Living Room TV"
+            placeholderTextColor="#94a3b8"
+            autoCapitalize="words"
+            autoCorrect={false}
             returnKeyType="done"
             onSubmitEditing={handleAdd}
           />
-          {error ? <Text style={styles.manualError}>{error}</Text> : null}
           <TouchableOpacity style={styles.manualAddBtn} onPress={handleAdd}>
             <Text style={styles.manualAddBtnText}>Add to Filter List</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -232,45 +336,23 @@ export default function AccessScreen() {
   const addMutation = useAddMacFilter();
   const removeMutation = useRemoveMacFilter();
   const setModeMutation = useSetFilterMode();
+  const { labels, setLabel, removeLabel } = useMacLabels();
 
   const [pickVisible, setPickVisible] = useState(false);
   const [manualVisible, setManualVisible] = useState(false);
+  const [modeModalVisible, setModeModalVisible] = useState(false);
   const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
 
   const mode = data?.mode ?? 'disabled';
   const entries = data?.entries ?? [];
 
-  const handleChangeMode = useCallback(() => {
-    Alert.alert('Change Filter Mode', 'Select a new mode for MAC filtering.', [
-      {
-        text: 'Disabled (off)',
-        onPress: () => setModeMutation.mutate('disabled'),
-      },
-      {
-        text: 'Blacklist — block listed',
-        onPress: () => setModeMutation.mutate('blacklist'),
-      },
-      {
-        text: 'Whitelist — allow only listed',
-        style: 'destructive',
-        onPress: () => {
-          Alert.alert(
-            'Enable Whitelist Mode',
-            'Warning: Make sure your device\'s MAC is in the list before enabling whitelist mode, or you will be locked out.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Enable Whitelist',
-                style: 'destructive',
-                onPress: () => setModeMutation.mutate('whitelist'),
-              },
-            ],
-          );
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }, [setModeMutation]);
+  const handleSelectMode = useCallback(
+    (newMode: 'disabled' | 'blacklist' | 'whitelist') => {
+      setModeModalVisible(false);
+      setModeMutation.mutate(newMode);
+    },
+    [setModeMutation],
+  );
 
   const handleAddPress = useCallback(() => {
     Alert.alert('Add MAC Filter Entry', 'Choose how to add a device.', [
@@ -281,19 +363,21 @@ export default function AccessScreen() {
   }, []);
 
   const handlePick = useCallback(
-    (mac: string) => {
+    (mac: string, label: string) => {
       setPickVisible(false);
+      if (label) setLabel(mac, label);
       addMutation.mutate(mac);
     },
-    [addMutation],
+    [addMutation, setLabel],
   );
 
   const handleManualAdd = useCallback(
-    (mac: string) => {
+    (mac: string, label: string) => {
       setManualVisible(false);
+      if (label) setLabel(mac, label);
       addMutation.mutate(mac);
     },
-    [addMutation],
+    [addMutation, setLabel],
   );
 
   const handleDelete = useCallback(
@@ -309,14 +393,17 @@ export default function AccessScreen() {
             onPress: () => {
               setDeletingIndex(entry.index);
               removeMutation.mutate(entry.index, {
-                onSettled: () => setDeletingIndex(null),
+                onSettled: () => {
+                  setDeletingIndex(null);
+                  removeLabel(entry.mac);
+                },
               });
             },
           },
         ],
       );
     },
-    [removeMutation],
+    [removeMutation, removeLabel],
   );
 
   if (isLoading) {
@@ -351,21 +438,25 @@ export default function AccessScreen() {
     <View style={styles.root}>
       {/* mode header */}
       <View style={styles.modeHeader}>
-        <View>
+        <View style={styles.modeHeaderLeft}>
           <Text style={styles.modeHeaderLabel}>Current Mode</Text>
-          <Text style={[styles.modeHeaderValue, { color: modeBadgeColor(mode) }]}>
-            {modeLabel(mode)}
-          </Text>
+          <View style={styles.modeHeaderRow}>
+            <View style={[styles.modeHeaderDot, { backgroundColor: modeBadgeColor(mode) }]} />
+            <Text style={[styles.modeHeaderValue, { color: modeBadgeColor(mode) }]} numberOfLines={1}>
+              {modeLabel(mode)}
+            </Text>
+          </View>
+          <Text style={styles.modeHeaderDesc} numberOfLines={1}>{modeDescription(mode)}</Text>
         </View>
         <TouchableOpacity
           style={styles.changeModeBtn}
-          onPress={handleChangeMode}
+          onPress={() => setModeModalVisible(true)}
           disabled={setModeMutation.isPending}
         >
           {setModeMutation.isPending ? (
             <ActivityIndicator size="small" color="#2563eb" />
           ) : (
-            <Text style={styles.changeModeBtnText}>Change Mode</Text>
+            <Text style={styles.changeModeBtnText}>Change</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -397,6 +488,7 @@ export default function AccessScreen() {
               <React.Fragment key={entry.mac}>
                 <EntryRow
                   entry={entry}
+                  label={labels[entry.mac.toLowerCase()]}
                   onDelete={() => handleDelete(entry)}
                   isDeleting={deletingIndex === entry.index}
                 />
@@ -413,6 +505,13 @@ export default function AccessScreen() {
       </TouchableOpacity>
 
       {/* modals */}
+      <ChangeModeModal
+        visible={modeModalVisible}
+        currentMode={mode}
+        isPending={setModeMutation.isPending}
+        onSelect={handleSelectMode}
+        onClose={() => setModeModalVisible(false)}
+      />
       <PickDeviceModal
         visible={pickVisible}
         existingMacs={entries.map((e) => e.mac)}
@@ -441,23 +540,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 56 : 20,
-    paddingBottom: 18,
+    paddingBottom: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e2e8f0',
   },
-  modeHeaderLabel: { fontSize: 12, color: '#94a3b8', marginBottom: 4, fontWeight: '500' },
-  modeHeaderValue: { fontSize: 17, fontWeight: '700' },
+  modeHeaderLeft: { flex: 1, marginRight: 12 },
+  modeHeaderLabel: { fontSize: 11, color: '#94a3b8', fontWeight: '500', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  modeHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  modeHeaderDot: { width: 8, height: 8, borderRadius: 4 },
+  modeHeaderValue: { fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  modeHeaderDesc: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
   changeModeBtn: {
     backgroundColor: '#eff6ff',
     borderRadius: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    minWidth: 40,
     alignItems: 'center',
+    minWidth: 70,
   },
-  changeModeBtnText: { color: '#2563eb', fontWeight: '600', fontSize: 14 },
+  changeModeBtnText: { color: '#2563eb', fontWeight: '600', fontSize: 13 },
 
   statusBar: {
     flexDirection: 'row',
@@ -490,16 +593,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
   entryMain: { flex: 1 },
-  entryMac: {
+  entryLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#0f172a',
+    marginBottom: 2,
+  },
+  entryMac: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#475569',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  entryVendor: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  entryVendor: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
   entryRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 
   enabledBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
@@ -576,27 +685,66 @@ const styles = StyleSheet.create({
   pickRowIp: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
   pickRowChevron: { fontSize: 22, color: '#2563eb', fontWeight: '600', marginLeft: 12 },
 
+  manualScroll: { flex: 1 },
   manualBody: { padding: 20 },
   manualLabel: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 8 },
+  manualOptional: { fontSize: 12, fontWeight: '400', color: '#94a3b8' },
   manualInput: {
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 15,
     color: '#0f172a',
     backgroundColor: '#fff',
-    marginBottom: 8,
+    marginBottom: 4,
   },
-  manualError: { fontSize: 13, color: '#dc2626', marginBottom: 16 },
+  manualError: { fontSize: 13, color: '#dc2626', marginBottom: 8 },
   manualAddBtn: {
     backgroundColor: '#2563eb',
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 20,
   },
   manualAddBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  // change mode modal
+  modeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modeSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+  },
+  modeSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#f1f5f9',
+  },
+  modeSheetTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
+  modeSheetClose: { fontSize: 16, color: '#94a3b8', fontWeight: '600', paddingHorizontal: 4 },
+  modeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  modeOptionActive: { backgroundColor: '#f8fafc' },
+  modeOptionLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  modeOptionDot: { width: 10, height: 10, borderRadius: 5 },
+  modeOptionLabel: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
+  modeOptionDesc: { fontSize: 12, color: '#94a3b8' },
+  modeOptionCheck: { fontSize: 18, fontWeight: '700' },
 });
